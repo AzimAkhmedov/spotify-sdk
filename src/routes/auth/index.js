@@ -3,17 +3,22 @@ const sql = require("../../db");
 const router = express.Router();
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
+const axios = require("axios");
 
 dotenv.config();
 
 router.post("/register", (req, res) => {
   const { email, password } = req.body;
 
-  sql`INSERT INTO users (email, password, profile_img_url) VALUES (${email}, ${password}, ${null})`
+  sql`INSERT INTO users (email, password, profile_img_url) VALUES (${email}, ${password}, ${null})     returning *`
     .then((user) => {
-      res.status(201).json({ message: "User created", user });
+      const token = jwt.sign(user[0], process.env.SECRET_KEY, {
+        expiresIn: "1h",
+      });
+      res.status(201).json({ message: "User created", user: user[0], token });
     })
     .catch((err) => {
+      console.log(err);
       res.status(400).json({ error: err });
     });
 });
@@ -51,4 +56,60 @@ router.post("/login", (req, res) => {
   // });
 });
 
+router.post("/google-login", async (req, res) => {
+  const { token } = req.body;
+  const { data } = await axios.get(
+    "https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + token
+  );
+  const { email, name, picture } = data;
+
+  console.log(data);
+
+  const sqlData = await sql`SELECT * from users WHERE email = ${email}`;
+
+  console.log(sqlData);
+
+  if (sqlData.length) {
+    const token = jwt.sign(sqlData[0], process.env.SECRET_KEY, {
+      expiresIn: "1h",
+    });
+    return res.json({ message: "Login successful", user: sqlData[0], token });
+  } else {
+    return res.json({
+      message: "This user isnt registered",
+      email,
+      name,
+      picture,
+    });
+  }
+});
+
+router.post("/spotify-login", async (req, res) => {
+  const { token } = req.body;
+  const { data } = await axios.get("https://api.spotify.com/v1/me", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const { email, display_name } = data;
+
+  console.log(data);
+
+  const sqlData = await sql`SELECT * from users WHERE email = ${email}`;
+
+  console.log(sqlData);
+
+  if (sqlData.length) {
+    const token = jwt.sign(sqlData[0], process.env.SECRET_KEY, {
+      expiresIn: "1h",
+    });
+    return res.json({ message: "Login successful", user: sqlData[0], token });
+  } else {
+    return res.json({
+      message: "This user isnt registered",
+      email,
+      display_name,
+    });
+  }
+});
 module.exports = router;
